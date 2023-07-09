@@ -5,5 +5,9 @@
 <DataSet index= "0" file="city3d_iT0000000iC00000.vti">
 </DataSet>
 </Block>
+<Block index="1" >
+<DataSet index= "0" file="city3d_iT0000000iC00001.vti">
+</DataSet>
+</Block>
 </vtkMultiBlockDataSet>
 </VTKFile>

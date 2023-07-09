@@ -107,15 +107,20 @@ void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
   const auto startIterT = converter.getLatticeTime(0.1);
 
   if (iT < maxStartT && iT % startIterT == 0) {
-    auto uF = std::shared_ptr<AnalyticalF3D<T,T>>(new AnalyticalConst3D<T,T>(converter.getCharLatticeVelocity(), 0, 0));
+    //auto uF = std::shared_ptr<AnalyticalF3D<T,T>>(new AnalyticalConst3D<T,T>(converter.getCharLatticeVelocity(), 0, 0));
 
     PolynomialStartScale<T,std::size_t> scale(maxStartT, 1);
     T frac{};
     scale(&frac, &iT);
 
+    std::vector<T> maxVelocity(3,0);
+
+    maxVelocity[0] = frac*converter.getCharLatticeVelocity();
+    LinearProfile3D<T> LinVProf(sGeometry,3,maxVelocity);
+
     clout << iT << " " << frac << std::endl;
 
-    sLattice.defineU(sGeometry, 2, *(frac * uF));
+    sLattice.defineU(sGeometry, 2, LinVProf);
 
     sLattice.setProcessingContext<Array<momenta::FixedVelocityMomentumGeneric::VELOCITY>>(
       ProcessingContext::Simulation);
@@ -152,7 +157,7 @@ void getResults(std::size_t iT,
     }
   }
 
-  if (iT % converter.getLatticeTime(60) == 0) {
+  if (iT % converter.getLatticeTime(1) == 0) {
     sLattice.setProcessingContext(ProcessingContext::Evaluation);
     sLattice.scheduleBackgroundOutputVTK([&,iT](auto task) {
       SuperVTMwriter3D<T> vtkWriter("city3d");
