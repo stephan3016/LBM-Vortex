@@ -278,6 +278,28 @@ public:
 };
 
 
+
+/**
+  This functor returns an exponential velocity profile in z-direction.
+*/
+
+template<typename T>
+class ExponentialProfile3D final : public AnalyticalF3D<T,T>{
+protected:
+    OstreamManager clout;
+    olb::Vector<T,3> x0;
+    olb::Vector<T,3> x1;
+    std::vector<T> alpha;
+    std::vector<T> beta;
+    std::vector<T> betaVel;
+
+public:
+    ///Constructor:
+    ExponentialProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& alpha_, std::vector<T>& beta_, std::vector<T>& betaVel_);
+    bool operator() (T output[], const T x[]) override;
+};
+
+
 //More accurate Version using a trigonometric formulation
 template <typename T>
 class RectangleTrigonometricPoiseuille3D final : public AnalyticalF3D<T,T> {
