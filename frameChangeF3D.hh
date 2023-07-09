@@ -529,9 +529,9 @@ template <typename T>
 bool LinearProfile3D<T>::operator()(T output[], const T x[])
  {
      T positionFactor = 1/(x1[2] - x0[2]);
-     output[0] = 0;
+     output[0] = maxVelocity[0]*positionFactor*x[2];
      output[1] = 0;
-     output[2] = maxVelocity[0]*positionFactor*x[2];
+     output[2] = 0;
      return true;
 }
 
