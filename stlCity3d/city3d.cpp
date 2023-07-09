@@ -113,14 +113,19 @@ void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
     T frac{};
     scale(&frac, &iT);
 
-    std::vector<T> maxVelocity(3,0);
+    // paramters for exponential function:
+    std::vector<T> alpha(3,0);
+    std::vector<T> beta(3,0);
+    std::vector<T> betaVel(3,0);
+    betaVel[0] = 3.93;
+    beta[0] = 120;
+    alpha[0] = 4.118;
 
-    maxVelocity[0] = frac*converter.getCharLatticeVelocity();
-    LinearProfile3D<T> LinVProf(sGeometry,3,maxVelocity);
+    ExponentialProfile3D<T> ExpProfile(sGeometry,2, alpha, beta, betaVel);
 
     clout << iT << " " << frac << std::endl;
 
-    sLattice.defineU(sGeometry, 2, LinVProf);
+    sLattice.defineU(sGeometry, 2, ExpProfile);
 
     sLattice.setProcessingContext<Array<momenta::FixedVelocityMomentumGeneric::VELOCITY>>(
       ProcessingContext::Simulation);
