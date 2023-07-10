@@ -42,6 +42,7 @@ void prepareGeometry(const UnitConverter<T,DESCRIPTOR>& converter,
   sGeometry.rename(0,2);
   sGeometry.rename(2,1,{1,1,1});
 
+    //Floor: mat_num 3
   {
     auto origin = volume.getMin() - 1*converter.getPhysDeltaX();
     auto extent = volume.getMax() + 1*converter.getPhysDeltaX();
@@ -49,6 +50,27 @@ void prepareGeometry(const UnitConverter<T,DESCRIPTOR>& converter,
     IndicatorCuboid3D<T> floor(extent, origin);
     sGeometry.rename(2,3,floor);
   }
+
+    // Inlet: mat_num 4
+  {
+      auto boundaryVector = volume.getMax()+1*converter.getPhysDeltaX();
+      boundaryVector[0] = 1*converter.getPhysDeltaX();
+
+      auto boundaryOrigin = volume.getMin() - 1*converter.getPhysDeltaX();
+      IndicatorCuboid3D<T> VortexBoundary(boundaryVector, boundaryOrigin);
+      sGeometry.rename(2,4, VortexBoundary);
+  }
+
+    // Side and rear faces: mat_num 5
+    {
+        auto TopLayerVector = volume.getMax() + 1*converter.getPhysDeltaX();
+
+        auto TopLayerOrigin = volume.getMin() - 1*converter.getPhysDeltaX();
+        IndicatorCuboid3D<T> TopLayerBoundary(TopLayerVector, TopLayerOrigin);
+        sGeometry.rename(2,5, TopLayerBoundary);
+    }
+
+    // Hence, the top layer is mat_num 2
 
   sGeometry.clean();
   sGeometry.innerClean();
@@ -67,8 +89,11 @@ void prepareLattice(SuperLattice<T,DESCRIPTOR>& sLattice,
   sLattice.defineDynamics<BulkDynamics>(sGeometry, 1);
   sLattice.defineDynamics<BounceBack>(sGeometry, 3);
 
+
   {
+    setInterpolatedVelocityBoundary<T,DESCRIPTOR>(sLattice, omega, sGeometry, 4);
     setInterpolatedVelocityBoundary<T,DESCRIPTOR>(sLattice, omega, sGeometry, 2);
+    //setInterpolatedPressureBoundary<T,DESCRIPTOR>(sLattice, omega, sGeometry, 5);
     AnalyticalConst3D<T,T> rhoF(1);
     AnalyticalConst3D<T,T> uF(0, 0, 0);
     sLattice.defineRhoU(sGeometry.getMaterialIndicator(2), rhoF, uF);
@@ -107,7 +132,6 @@ void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
   const auto startIterT = converter.getLatticeTime(0.1);
 
   if (iT < maxStartT && iT % startIterT == 0) {
-    //auto uF = std::shared_ptr<AnalyticalF3D<T,T>>(new AnalyticalConst3D<T,T>(converter.getCharLatticeVelocity(), 0, 0));
 
     PolynomialStartScale<T,std::size_t> scale(maxStartT, 1);
     T frac{};
@@ -117,15 +141,19 @@ void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
     std::vector<T> alpha(3,0);
     std::vector<T> beta(3,0);
     std::vector<T> betaVel(3,0);
-    betaVel[0] = 3.93;
-    beta[0] = 120;
+    betaVel[0] = 3.93*frac;
+    beta[0] = 100;
     alpha[0] = 4.118;
 
-    ExponentialProfile3D<T> ExpProfile(sGeometry,2, alpha, beta, betaVel);
+    //auto uF = std::shared_ptr<AnalyticalF3D<T,T>>(new AnalyticalConst3D<T,T>(0, 0, betaVel[0]));        //
+
+    ExponentialProfile3D<T> ExpProfile2(sGeometry,2, alpha, beta, betaVel);
+    ExponentialProfile3D<T> ExpProfile4(sGeometry,4, alpha, beta, betaVel);
 
     clout << iT << " " << frac << std::endl;
 
-    sLattice.defineU(sGeometry, 2, ExpProfile);
+    sLattice.defineU(sGeometry, 4, ExpProfile4);
+    sLattice.defineU(sGeometry, 2, ExpProfile2);
 
     sLattice.setProcessingContext<Array<momenta::FixedVelocityMomentumGeneric::VELOCITY>>(
       ProcessingContext::Simulation);
@@ -182,7 +210,7 @@ int main(int argc, char* argv[]) {
     int {1},     // resolution: number of voxels per charPhysL
     (T)   0.1,   // lattice velocity
     (T)   1.0,   // charPhysLength: reference length of simulation geometry
-    (T)  10.0,   // charPhysVelocity: maximal/highest expected velocity during simulation in __m / s__
+    (T)  5.0,   // charPhysVelocity: maximal/highest expected velocity during simulation in __m / s__
     (T)   10e-5, // physViscosity: physical kinematic viscosity in __m^2 / s__
     (T)   1.0    // physDensity: physical density in __kg / m^3__
   );
