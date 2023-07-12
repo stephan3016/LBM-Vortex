@@ -27,6 +27,7 @@
 using namespace olb;
 
 using T = float;
+using D = double;
 using DESCRIPTOR = descriptors::D3Q19<descriptors::POROSITY>;
 using BulkDynamics = dynamics::Tuple<
   T, DESCRIPTOR,
@@ -67,7 +68,7 @@ void prepareGeometry(const UnitConverter<T,DESCRIPTOR>& converter,
 
         auto TopLayerOrigin = volume.getMin() - 1*converter.getPhysDeltaX();
         IndicatorCuboid3D<T> TopLayerBoundary(TopLayerVector, TopLayerOrigin);
-        sGeometry.rename(2,5, TopLayerBoundary);
+        sGeometry.rename(2,5,1, TopLayerBoundary);
     }
 
     // Hence, the top layer is mat_num 2
@@ -87,13 +88,16 @@ void prepareLattice(SuperLattice<T,DESCRIPTOR>& sLattice,
 
   sLattice.defineDynamics<NoDynamics>(sGeometry, 0);
   sLattice.defineDynamics<BulkDynamics>(sGeometry, 1);
+  sLattice.defineDynamics<BulkDynamics>(sGeometry, 2);
+  sLattice.defineDynamics<BulkDynamics>(sGeometry, 4);
+  sLattice.defineDynamics<BulkDynamics>(sGeometry, 5);
   sLattice.defineDynamics<BounceBack>(sGeometry, 3);
 
 
   {
     setInterpolatedVelocityBoundary<T,DESCRIPTOR>(sLattice, omega, sGeometry, 4);
     setInterpolatedVelocityBoundary<T,DESCRIPTOR>(sLattice, omega, sGeometry, 2);
-    //setInterpolatedPressureBoundary<T,DESCRIPTOR>(sLattice, omega, sGeometry, 5);
+    setInterpolatedPressureBoundary<T,DESCRIPTOR>(sLattice, omega, sGeometry, 5);
     AnalyticalConst3D<T,T> rhoF(1);
     AnalyticalConst3D<T,T> uF(0, 0, 0);
     sLattice.defineRhoU(sGeometry.getMaterialIndicator(2), rhoF, uF);
@@ -124,7 +128,7 @@ void prepareLattice(SuperLattice<T,DESCRIPTOR>& sLattice,
 void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
                        SuperGeometry<T,3>& sGeometry,
                        SuperLattice<T,DESCRIPTOR>& sLattice,
-                       std::size_t iT)
+                       std::size_t iT,  IndicatorF3D<T>& volume)
 {
   OstreamManager clout(std::cout, "boundary");
 
@@ -145,14 +149,58 @@ void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
     beta[0] = 100;
     alpha[0] = 4.118;
 
-    //auto uF = std::shared_ptr<AnalyticalF3D<T,T>>(new AnalyticalConst3D<T,T>(0, 0, betaVel[0]));        //
 
+
+    //Implementation of the vortex method:
+
+// -----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*
+     //1: Arguments for the vortex method
+
+    // a) Construct an IndicatorF3D in the form of an IndicatorCuboid3D for the inlet:
+      auto boundaryVector = volume.getMax()+1*converter.getPhysDeltaX();
+      boundaryVector[0] = 1*converter.getPhysDeltaX();
+      auto boundaryOrigin = volume.getMin() - 1*converter.getPhysDeltaX();
+      boundaryOrigin[2] = 0.2*volume.getMax()[2];
+      IndicatorCuboid3D<T> VortexBoundaryIndicator(boundaryVector, boundaryOrigin);
+
+      // b) declare arguments of the type FunctorPtr<...>
+      auto VortexBoundary = FunctorPtr<IndicatorF3D<T>>(new IndicatorCuboid3D<T>(boundaryVector, boundaryOrigin));
+      auto InletLatticeI = FunctorPtr<SuperIndicatorF3D<T>>(new SuperIndicatorFfromIndicatorF3D<T>(VortexBoundaryIndicator, sGeometry));
+
+      // c) declare the direction vector of type T (=float)
+      Vector<T,3> axisDirection(T(1),T(0),T(0));
+
+
+
+    //2: Declare the Vortex method as a class by calling its constructor
+    // In this case, the class will be called "VortexMethodTurbulentVelocityBoundary"
+    VortexMethodTurbulentVelocityBoundary<T,DESCRIPTOR> VortexMethodTurbulentVelocityBoundary(std::move(InletLatticeI), std::move(VortexBoundary), converter, sLattice,42,100, (D) 0.16, (D) 0.9, axisDirection);
+
+
+
+    //3. Implementing the desired velocity profile for the vortex boundary
+    // a) The vortex method requires the profile to be given not as AnalyticalF3D but as a shared_ptr pointing to the actual AnalyticalF3D that indicates the profile
+    auto uF = std::shared_ptr<AnalyticalF3D<T,T>>(new ExponentialProfile3D<T>(sGeometry,4, alpha, beta, betaVel));
+
+    // b) Now we call the functions inside the class we created above
+    VortexMethodTurbulentVelocityBoundary.setProfile(uF);       // to set the desired v-profile
+
+
+
+    //4. We apply all changes to the boundary
+    VortexMethodTurbulentVelocityBoundary.apply(iT);            // to apply our changes
+
+
+
+    // 5. VortexBoundary condition was applied :)
+
+// -----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*
+
+
+
+    // Define the exponential profile in z-direction. The resulting object is of type AnalyticalF3D
+    // This here is only for the top boundary layer, where no Vortex method is implemented so far --> is it necessary to implemented there?
     ExponentialProfile3D<T> ExpProfile2(sGeometry,2, alpha, beta, betaVel);
-    ExponentialProfile3D<T> ExpProfile4(sGeometry,4, alpha, beta, betaVel);
-
-    clout << iT << " " << frac << std::endl;
-
-    sLattice.defineU(sGeometry, 4, ExpProfile4);
     sLattice.defineU(sGeometry, 2, ExpProfile2);
 
     sLattice.setProcessingContext<Array<momenta::FixedVelocityMomentumGeneric::VELOCITY>>(
@@ -210,7 +258,7 @@ int main(int argc, char* argv[]) {
     int {1},     // resolution: number of voxels per charPhysL
     (T)   0.1,   // lattice velocity
     (T)   1.0,   // charPhysLength: reference length of simulation geometry
-    (T)  5.0,   // charPhysVelocity: maximal/highest expected velocity during simulation in __m / s__
+    (T)  50.0,   // charPhysVelocity: maximal/highest expected velocity during simulation in __m / s__
     (T)   10e-5, // physViscosity: physical kinematic viscosity in __m^2 / s__
     (T)   1.0    // physDensity: physical density in __kg / m^3__
   );
@@ -237,7 +285,7 @@ int main(int argc, char* argv[]) {
   timer.start();
 
   for (std::size_t iT=0; iT <= converter.getLatticeTime(1e6); ++iT) {
-    setBoundaryValues(converter, sGeometry, sLattice, iT);
+    setBoundaryValues(converter, sGeometry, sLattice, iT, volume);
     sLattice.collideAndStream();
     getResults(iT, sLattice, sGeometry, converter, timer);
   }
