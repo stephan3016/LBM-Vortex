@@ -54,22 +54,35 @@ void prepareGeometry(const UnitConverter<T,DESCRIPTOR>& converter,
 
     // Inlet: mat_num 4
   {
-      auto boundaryVector = volume.getMax()+1*converter.getPhysDeltaX();
-      boundaryVector[0] = 1*converter.getPhysDeltaX();
+      auto boundaryVector = volume.getMax()+10*converter.getPhysDeltaX();
+      boundaryVector[0] = 2*converter.getPhysDeltaX();
 
       auto boundaryOrigin = volume.getMin() - 1*converter.getPhysDeltaX();
       IndicatorCuboid3D<T> VortexBoundary(boundaryVector, boundaryOrigin);
-      sGeometry.rename(2,4, VortexBoundary);
+      sGeometry.rename(2,4,1, VortexBoundary);
   }
 
     // outlet: mat_num 5
     {
         auto TopLayerVector = volume.getMax() + 1*converter.getPhysDeltaX();
+        TopLayerVector[0] = 10000.;
 
         auto TopLayerOrigin = volume.getMin() - 1*converter.getPhysDeltaX();
+        TopLayerOrigin[2] = volume.getMax()[2] - 1*converter.getPhysDeltaX();
         IndicatorCuboid3D<T> TopLayerBoundary(TopLayerVector, TopLayerOrigin);
         sGeometry.rename(2,5,1, TopLayerBoundary);
     }
+    
+    {
+      auto boundaryVectorO = volume.getMax()+1*converter.getPhysDeltaX();
+      boundaryVectorO[0] = 2*converter.getPhysDeltaX();
+
+      auto boundaryOriginO = volume.getMax() - 1*converter.getPhysDeltaX();
+      boundaryOriginO[1] = 0.;
+      boundaryOriginO[2] = 0.;
+      IndicatorCuboid3D<T> outlet(boundaryVectorO, boundaryOriginO);
+      sGeometry.rename(2,6,1, outlet);
+  }
 
     // Hence, the top+side layer is mat_num 2
   sGeometry.clean();
@@ -90,7 +103,7 @@ void prepareLattice(SuperLattice<T,DESCRIPTOR>& sLattice,
   sLattice.defineDynamics<BounceBack>(sGeometry, 2);
   sLattice.defineDynamics<BounceBack>(sGeometry, 3);
   sLattice.defineDynamics<BulkDynamics>(sGeometry, 4);
-  sLattice.defineDynamics<BulkDynamics>(sGeometry, 5);
+  sLattice.defineDynamics<BounceBack>(sGeometry, 5);
   sLattice.defineDynamics<BulkDynamics>(sGeometry, 6);
 
 
@@ -105,17 +118,17 @@ void prepareLattice(SuperLattice<T,DESCRIPTOR>& sLattice,
   }
 
   sLattice.setParameter<descriptors::OMEGA>(omega);
-  sLattice.setParameter<collision::LES::Smagorinsky>(0.1);
+  sLattice.setParameter<collision::LES::Smagorinsky>(0.15);
 
   {
-    auto bulkIndicator = sGeometry.getMaterialIndicator({1,3});
+    auto bulkIndicator = sGeometry.getMaterialIndicator({1,2,3,4,5,6});
     AnalyticalConst3D<T,T> rhoF( T( 1 ) );
     AnalyticalConst3D<T,T> uF( T( 0 ), T( 0 ), T( 0 ) );
     sLattice.iniEquilibrium(bulkIndicator, rhoF, uF);
     sLattice.defineRhoU(bulkIndicator, rhoF, uF);
   }
 
-  AnalyticalConst3D<T,T> initialPorosityF(1);
+  AnalyticalConst3D<T,T> initialPorosityF(1.);
   sLattice.defineField<descriptors::POROSITY>(sGeometry.getMaterialIndicator({0,1,2,3,4,5,6}), initialPorosityF);
 
   AnalyticalConst3D<T,T> solidPorosityF(0);
@@ -129,13 +142,21 @@ void prepareLattice(SuperLattice<T,DESCRIPTOR>& sLattice,
 void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
                        SuperGeometry<T,3>& sGeometry,
                        SuperLattice<T,DESCRIPTOR>& sLattice,
-                       std::size_t iT,  IndicatorF3D<T>& volume,
-                       IndicatorCuboid3D<T>& bounding)
+                       std::size_t iT,
+                       VortexMethodTurbulentVelocityBoundary<T,DESCRIPTOR>& vortex)
 {
   OstreamManager clout(std::cout, "boundary");
 
   const auto maxStartT =  converter.getLatticeTime(60);
   const auto startIterT = converter.getLatticeTime(0.1);
+  
+  // paramters for exponential function:
+    std::vector<T> alpha(3,0);
+    std::vector<T> beta(3,0);
+    std::vector<T> betaVel(3,0);
+    betaVel[0] = converter.getLatticeVelocity(50.);
+    beta[0] = 100;
+    alpha[0] = 4;
 
   if (iT < maxStartT && iT % startIterT == 0) {
 
@@ -144,74 +165,48 @@ void setBoundaryValues(const UnitConverter<T,DESCRIPTOR>& converter,
     scale(&frac, &iT);
 
     // paramters for exponential function:
-    std::vector<T> alpha(3,0);
-    std::vector<T> beta(3,0);
-    std::vector<T> betaVel(3,0);
-    betaVel[0] = 0.004*frac;
-    beta[0] = 100;
-    alpha[0] = 4;
+    betaVel[0] = converter.getLatticeVelocity(50.)*frac;
 
 
 
     //Implementation of the vortex method:
 
 // -----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*
-     //1: Arguments for the vortex method
-if(0){//VortexMethode ein/aus
-    // a) Construct an IndicatorF3D in the form of an IndicatorCuboid3D for the inlet:
-      auto boundaryVector = bounding.getMax() -bounding.getMin()+ 1*converter.getPhysDeltaX();
-      boundaryVector[0] = 1*converter.getPhysDeltaX();
-      auto boundaryOrigin = bounding.getMin() - 1*converter.getPhysDeltaX();
-      //std::cout<<"XXXXXXXXXXXXXXXXXXXXorigin"<<boundaryOrigin<<"  Vektor "<<boundaryVector<<std::endl;
-      boundaryOrigin[2] = 0.2*bounding.getMax()[2];
-      IndicatorCuboid3D<T> VortexBoundaryIndicator(boundaryVector, boundaryOrigin);
-
-      // b) declare arguments of the type FunctorPtr<...>
-      auto VortexBoundary = FunctorPtr<IndicatorF3D<T>>(new IndicatorCuboid3D<T>(boundaryVector, boundaryOrigin));
-      auto InletLatticeI = FunctorPtr<SuperIndicatorF3D<T>>(new SuperIndicatorFfromIndicatorF3D<T>(VortexBoundaryIndicator, sGeometry));
-
-      // c) declare the direction vector of type T (=float)
-      Vector<T,3> axisDirection(T(1),T(0),T(0));
-
-
-
-    //2: Declare the Vortex method as a class by calling its constructor
-    // In this case, the class will be called "VortexMethodTurbulentVelocityBoundary"
-    VortexMethodTurbulentVelocityBoundary<T,DESCRIPTOR> VortexMethodTurbulentVelocityBoundary(std::move(InletLatticeI), std::move(VortexBoundary), converter, sLattice,42,100, (D) 0.16, (D) 0.9, axisDirection);
-
-
-
     //3. Implementing the desired velocity profile for the vortex boundary
     // a) The vortex method requires the profile to be given not as AnalyticalF3D but as a shared_ptr pointing to the actual AnalyticalF3D that indicates the profile
     auto uF = std::shared_ptr<AnalyticalF3D<T,T>>(new ExponentialProfile3D<T>(sGeometry,4, alpha, beta, betaVel));
 
     // b) Now we call the functions inside the class we created above
-    VortexMethodTurbulentVelocityBoundary.setProfile(uF);       // to set the desired v-profile
+    vortex.setProfile(uF);       // to set the desired v-profile
 
 
 
     //4. We apply all changes to the boundary
-    VortexMethodTurbulentVelocityBoundary.apply(iT);            // to apply our changes
+    vortex.apply(iT);            // to apply our changes
 
 
 
     // 5. VortexBoundary condition was applied :)
 
 // -----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*-----*
+    //ExponentialProfile3D<T> ExpProfile2(sGeometry,5, alpha, beta, betaVel);
+    //sLattice.defineU(sGeometry, 5, ExpProfile2);
+    //sLattice.setProcessingContext<Array<momenta::FixedVelocityMomentumGeneric::VELOCITY>>(
+      //ProcessingContext::Simulation);
+    sLattice.template setProcessingContext<Array<U_PROFILE>>(ProcessingContext::Simulation);
 }
 else{
-    ExponentialProfile3D<T> ExpProfile4(sGeometry,4, alpha, beta, betaVel);
-    clout << iT << " " << frac << std::endl;
-    sLattice.defineU(sGeometry, 4, ExpProfile4);
-}
+    
+    vortex.apply(iT);
 
     // Define the exponential profile in z-direction. The resulting object is of type AnalyticalF3D
     // This here is only for the top boundary layer, where no Vortex method is implemented so far --> is it necessary to implemented there?
-    ExponentialProfile3D<T> ExpProfile2(sGeometry,5, alpha, beta, betaVel);
-    sLattice.defineU(sGeometry, 5, ExpProfile2);
-    sLattice.setProcessingContext<Array<momenta::FixedVelocityMomentumGeneric::VELOCITY>>(
-      ProcessingContext::Simulation);
-  }
+    //ExponentialProfile3D<T> ExpProfile2(sGeometry,5, alpha, beta, betaVel);
+    //sLattice.defineU(sGeometry, 5, ExpProfile2);
+    //sLattice.setProcessingContext<Array<momenta::FixedVelocityMomentumGeneric::VELOCITY>>(
+      //ProcessingContext::Simulation);
+    sLattice.template setProcessingContext<Array<U_PROFILE>>(ProcessingContext::Simulation);
+      }
 }
 
 void getResults(std::size_t iT,
@@ -252,8 +247,10 @@ void getResults(std::size_t iT,
     sLattice.scheduleBackgroundOutputVTK([&,iT](auto task) {
       SuperVTMwriter3D<T> vtkWriter("city3d");
       SuperLatticePhysVelocity3D velocity(sLattice, converter);
+      SuperLatticeGeometry3D geometry(sLattice, sGeometry);
       //SuperLatticeDensity3D density(sLattice, converter);
       vtkWriter.addFunctor(velocity);
+      vtkWriter.addFunctor(geometry);
       //vtkWriter.addFunctor(density);
       task(vtkWriter, iT);
     });
@@ -276,34 +273,58 @@ int main(int argc, char* argv[]) {
   converter.print();
 
   // Available at https://bwsyncandshare.kit.edu/s/zHRZSHnRCwAw5QA
-  STLreader<T> volume("Mensa_klein.stl", converter.getCharPhysLength(), 1, 1);
-  auto extent = volume.getMax() - volume.getMin();
+  STLreader<T> volume2("Mensa_klein.stl", converter.getConversionFactorLength(), 1., 0, true );
+  int einlauflaenge=100;
+  auto extent = volume2.getMax() - volume2.getMin();
+  extent[0]+=einlauflaenge*converter.getPhysDeltaX();
   extent[2] *= 2;
+
+  
   
   //extent[0] += 100*converter.getPhysDeltaX();//laengere Box fuer Einlauf
-  //auto Position=volume.getMin();
-  //Position[0]=volume.getMin()[0]-100*converter.getPhysDeltaX();
+  auto Position=volume2.getMin();
+  Position[0]-=einlauflaenge*converter.getPhysDeltaX();
   //IndicatorCuboid3D<T> bounding(extent, Position);
   
-  IndicatorCuboid3D<T> bounding(extent, volume.getMin());
-  
-  CuboidGeometry3D<T> cGeometry(bounding, converter.getPhysDeltaX(), 1*singleton::mpi().getSize());
+  IndicatorCuboid3D<T> volume(extent, Position);
+  CuboidGeometry3D<T> cGeometry(volume, converter.getPhysDeltaX(), 1*singleton::mpi().getSize());
   //cGeometry.setPeriodicity(true, true, false);
 
   BlockLoadBalancer<T> loadBalancer(cGeometry);
   SuperGeometry<T,3> sGeometry(cGeometry, loadBalancer);
 
-  prepareGeometry(converter, sGeometry, bounding);
+  prepareGeometry(converter, sGeometry, volume);
 
   SuperLattice<T,DESCRIPTOR> sLattice(sGeometry);
 
-  prepareLattice(sLattice, sGeometry, converter, volume);
+  prepareLattice(sLattice, sGeometry, converter, volume2);
+  
+   //a) Construct an IndicatorF3D in the form of an IndicatorCuboid3D for the inlet:
+      auto boundaryVector = volume.getMax() -volume.getMin()+ 1*converter.getPhysDeltaX();
+      boundaryVector[0] = 1*converter.getPhysDeltaX();
+      auto boundaryOrigin = volume.getMin() - 1*converter.getPhysDeltaX();
+      //std::cout<<"XXXXXXXXXXXXXXXXXXXXorigin"<<boundaryOrigin<<"  Vektor "<<boundaryVector<<std::endl;
+      boundaryOrigin[2] = 0.2*volume.getMax()[2];
+      IndicatorCuboid3D<T> VortexBoundaryIndicator(boundaryVector, boundaryOrigin);
+
+      // b) declare arguments of the type FunctorPtr<...>
+      auto VortexBoundary = FunctorPtr<IndicatorF3D<T>>(new IndicatorCuboid3D<T>(boundaryVector, boundaryOrigin));
+      auto InletLatticeI = FunctorPtr<SuperIndicatorF3D<T>>(new SuperIndicatorFfromIndicatorF3D<T>(VortexBoundaryIndicator, sGeometry));
+
+      // c) declare the direction vector of type T (=float)
+      Vector<T,3> axisDirection(T(1),T(0),T(0));
+
+
+
+    //2: Declare the Vortex method as a class by calling its constructor
+    // In this case, the class will be called "VortexMethodTurbulentVelocityBoundary"
+    VortexMethodTurbulentVelocityBoundary<T,DESCRIPTOR> vortex(std::move(InletLatticeI), std::move(VortexBoundary), converter, sLattice,100,100, (D) 10., (D) 0.1, axisDirection);
 
   util::Timer<T> timer(converter.getLatticeTime(1e6), sGeometry.getStatistics().getNvoxel());
   timer.start();
 
   for (std::size_t iT=0; iT <= converter.getLatticeTime(1e6); ++iT) {
-    setBoundaryValues(converter, sGeometry, sLattice, iT, volume,bounding);
+    setBoundaryValues(converter, sGeometry, sLattice, iT, vortex);
     sLattice.collideAndStream();
     getResults(iT, sLattice, sGeometry, converter, timer);
   }
