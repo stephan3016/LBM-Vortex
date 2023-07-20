@@ -535,9 +535,10 @@ bool LinearProfile3D<T>::operator()(T output[], const T x[])
      return true;
 }
 
-//Analytical exponential velocity profile --> v(z) = beta*(z/z_max)^{1/alpha}
+//Analytical exponential velocity profile --> v(z) = vg*(z/zg)^{1/alpha}
 template<typename T>
-ExponentialProfile3D<T>::ExponentialProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& alpha_, std::vector<T>& beta_, std::vector<T>& betaVel_):AnalyticalF3D<T,T>(3), clout(std::cout, "ExponentialProfile3D"), alpha(alpha_), beta(beta_), betaVel(betaVel_)
+ExponentialProfile3D<T>::ExponentialProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& alpha_, std::vector<T>& zg_, olb::Vector<T,3>& vg_):AnalyticalF3D<T,T>(3),
+    clout(std::cout, "ExponentialProfile3D"), alpha(alpha_), zg(zg_), vg(vg_)
 {
     olb::Vector<T, 3> min = superGeometry_.getStatistics().getMinPhysR(material_);
     olb::Vector<T, 3> max = superGeometry_.getStatistics().getMaxPhysR(material_);
@@ -550,9 +551,35 @@ ExponentialProfile3D<T>::ExponentialProfile3D(SuperGeometry<T,3>& superGeometry_
 template <typename T>
 bool ExponentialProfile3D<T>::operator()(T output[], const T x[])
 {
-    output[0] = betaVel[0]*pow(x[2]/beta[0],1/alpha[0]);          // velocity only in x-direction
-    output[1] = 0;
-    output[2] = 0;
+    z = x[2] - x0[2];                                       // New height coordinate: x0[2] is now ground level
+    for(int i = 0; i < 3; i++){
+        output[i] = vg[i]*pow(z/zg[0],1/alpha[0]);
+    }
+    return true;
+}
+
+
+//ABL velocity profile --> u(z) = (u_Stern/k)*ln((z+z0)/z0)
+template<typename T>
+ABLProfile3D<T>::ABLProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& k_, std::vector<T>& z0_, olb::Vector<T,3>& u_Stern_):AnalyticalF3D<T,T>(3),
+    clout(std::cout, "ABLProfile3D"), k(k_), z0(z0_), u_Stern(u_Stern_)
+{
+    olb::Vector<T, 3> min = superGeometry_.getStatistics().getMinPhysR(material_);
+    olb::Vector<T, 3> max = superGeometry_.getStatistics().getMaxPhysR(material_);
+     for (int iD = 0; iD < 3; iD++){
+        x0[iD] = min[iD];
+        x1[iD] = max[iD];
+     }
+
+}
+
+template <typename T>
+bool ABLProfile3D<T>::operator()(T output[], const T x[])
+{
+    z = x[2] - x0[2];                                   // New height coordinate: x0[2] is now ground level
+    for (int i = 0; i < 3; i++){
+        output[i] = u_Stern[i]*1/k[0]*log((z+z0[0])/z0[0]);
+    }
     return true;
 }
 

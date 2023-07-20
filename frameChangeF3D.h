@@ -290,32 +290,35 @@ protected:
     olb::Vector<T,3> x0;
     olb::Vector<T,3> x1;
     std::vector<T> alpha;
-    std::vector<T> beta;
-    std::vector<T> betaVel;
+    std::vector<T> zg;
+    olb::Vector<T,3> vg;
+    T z;
 
 public:
     ///Constructor:
-    ExponentialProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& alpha_, std::vector<T>& beta_, std::vector<T>& betaVel_);
+    ExponentialProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& alpha_, std::vector<T>& zg_, olb::Vector<T,3>& vg_);
     bool operator() (T output[], const T x[]) override;
 };
 
+
 /**
-  This functor returns an logarithmic velocity profile in z-direction.
+  This functor returns an ABL velocity profile as described in [Kahsay et al., 2018, DOI: 10.1177/1744259118791207]
 */
 
 template<typename T>
-class LogProfile3D final : public AnalyticalF3D<T,T>{
+class ABLProfile3D final : public AnalyticalF3D<T,T>{
 protected:
     OstreamManager clout;
-    olb::Vector<T,3> roughness;
+    olb::Vector<T,3> x0;
     olb::Vector<T,3> x1;
-    std::vector<T> alpha;
-    std::vector<T> beta;
-    std::vector<T> betaVel;
+    std::vector<T> k;
+    std::vector<T> z0;
+    olb::Vector<T,3> u_Stern;
+    T z;
 
 public:
     ///Constructor:
-    LogProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& betaVel_,std::vector<T>& z0);
+    ABLProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& k_, std::vector<T>& z0_, olb::Vector<T,3>& u_Stern_);
     bool operator() (T output[], const T x[]) override;
 };
 
