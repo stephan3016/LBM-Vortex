@@ -535,6 +535,26 @@ bool LinearProfile3D<T>::operator()(T output[], const T x[])
      return true;
 }
 
+//Analytical exponential velocity profile --> v(z) = beta*(z/z_max)^{1/alpha}
+template<typename T>
+ExponentialProfile3D<T>::ExponentialProfile3D(SuperGeometry<T,3>& superGeometry_, int material_, std::vector<T>& alpha_, std::vector<T>& beta_, std::vector<T>& betaVel_):AnalyticalF3D<T,T>(3), clout(std::cout, "ExponentialProfile3D"), alpha(alpha_), beta(beta_), betaVel(betaVel_)
+{
+    olb::Vector<T, 3> min = superGeometry_.getStatistics().getMinPhysR(material_);
+    olb::Vector<T, 3> max = superGeometry_.getStatistics().getMaxPhysR(material_);
+     for (int iD = 0; iD < 3; iD++){
+        x0[iD] = min[iD];
+        x1[iD] = max[iD];
+     }
+}
+
+template <typename T>
+bool ExponentialProfile3D<T>::operator()(T output[], const T x[])
+{
+    output[0] = betaVel[0]*pow(x[2]/beta[0],1/alpha[0]);          // velocity only in x-direction
+    output[1] = 0;
+    output[2] = 0;
+    return true;
+}
 
 
 
